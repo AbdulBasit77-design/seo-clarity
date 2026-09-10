@@ -2,13 +2,18 @@
  * SEO Auditor — all audit logic lives here.
  *
  * Tweak scoring rules in one place:
- *  - ON_PAGE_CHECKS  : each check returns an Issue; score = passed weight / total weight
- *  - TECHNICAL_CHECKS: same idea for robots/sitemap/https/noindex
- *  - performance     : comes straight from PageSpeed Insights (0-1 -> 0-100)
+ *  - runOnPageChecks    : title/description/headings/images/links checks
+ *  - runTechnicalChecks : https, noindex, robots.txt, sitemap.xml, viewport
+ *  - runPerformanceAudit: Google PageSpeed Insights (0-1 -> 0-100)
  *
- * Runs entirely in the browser. Page HTML is fetched through a public CORS
- * proxy because most sites block direct cross-origin requests.
+ * Page HTML, robots.txt, sitemap.xml and the PageSpeed call all go through
+ * small server functions (src/lib/audit.functions.ts) so there is no browser
+ * CORS problem; a public CORS proxy is kept as an automatic fallback.
+ * Parsing and scoring happen here, in the browser, via DOMParser.
  */
+
+import { fetchPageSpeed, fetchRemoteText } from "./audit.functions";
+
 
 export type Severity = "critical" | "warning" | "passed";
 export type CategoryKey = "onPage" | "performance" | "technical";
