@@ -39,14 +39,15 @@ export interface AuditResult {
 /* Config                                                              */
 /* ------------------------------------------------------------------ */
 
-/** Plug a Google API key here if you hit rate limits (leave "" for keyless). */
-const PAGESPEED_API_KEY = "";
+/**
+ * Optional Google API key: set a PAGESPEED_API_KEY secret on the server
+ * (read in src/lib/audit.functions.ts) if you outgrow the keyless quota.
+ */
 
-const PAGESPEED_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
-
-/** Public CORS proxy used to fetch the target page's HTML / robots / sitemap. */
+/** Public CORS proxy — fallback used only if the server fetch fails. */
 const proxy = (target: string) =>
   `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`;
+
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
