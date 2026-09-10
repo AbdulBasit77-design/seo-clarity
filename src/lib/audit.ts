@@ -85,15 +85,21 @@ function scoreFromIssues(issues: Issue[]): number {
   return Math.round((total / issues.length) * 100);
 }
 
+/** Fetch text via the server function, falling back to a public CORS proxy. */
 async function fetchText(url: string, timeoutMs = 20000): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(proxy(url), { signal: controller.signal });
-    if (!res.ok) throw new Error(`Proxy responded ${res.status}`);
-    return await res.text();
-  } finally {
-    clearTimeout(timer);
+    const { text } = await fetchRemoteText({ data: { url } });
+    return text;
+  } catch {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(proxy(url), { signal: controller.signal });
+      if (!res.ok) throw new Error(`Proxy responded ${res.status}`);
+      return await res.text();
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -104,17 +110,16 @@ async function fetchText(url: string, timeoutMs = 20000): Promise<string> {
 async function runPerformanceAudit(
   url: string,
 ): Promise<{ score: number; issues: Issue[] }> {
-  const params = new URLSearchParams({ url, strategy: "mobile" });
-  if (PAGESPEED_API_KEY) params.set("key", PAGESPEED_API_KEY);
+  const { lighthouseResult } = await fetchPageSpeed({ data: { url } });
 
-  const res = await fetch(`${PAGESPEED_ENDPOINT}?${params.toString()}`);
-  if (!res.ok) throw new Error(`PageSpeed responded ${res.status}`);
-  const data = await res.json();
-
-  const lh = data?.lighthouseResult;
-  const audits = lh?.audits ?? {};
-  const rawScore = lh?.categories?.performance?.score;
+  const lh = lighthouseResult as
+    | { audits?: Record<string, any>; categories?: { performance?: { score?: number } } }
+    | null;
+  if (!lh) throw new Error("No PageSpeed data");
+  const audits = lh.audits ?? {};
+  const rawScore = lh.categories?.performance?.score;
   const score = typeof rawScore === "number" ? Math.round(rawScore * 100) : 0;
+
 
   const issues: Issue[] = [];
 
