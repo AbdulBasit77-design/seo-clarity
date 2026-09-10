@@ -6,6 +6,10 @@ import { z } from "zod";
  *
  * Running these on the server avoids browser CORS entirely (more reliable than
  * a public CORS proxy) while keeping all scoring logic in src/lib/audit.ts.
+ *
+ * NOTE: these never throw. A missing robots.txt (404) or a rate-limited
+ * PageSpeed call (429) is an expected outcome of an audit, not a crash — so
+ * they return { ok: false, status } and the caller decides what it means.
  */
 
 const UA =
@@ -15,12 +19,16 @@ const UA =
 export const fetchRemoteText = createServerFn({ method: "POST" })
   .inputValidator((data) => z.object({ url: z.string().url() }).parse(data))
   .handler(async ({ data }) => {
-    const res = await fetch(data.url, {
-      headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml,text/plain,*/*" },
-      redirect: "follow",
-    });
-    if (!res.ok) throw new Error(`Target responded ${res.status}`);
-    return { text: await res.text() };
+    try {
+      const res = await fetch(data.url, {
+        headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml,text/plain,*/*" },
+        redirect: "follow",
+      });
+      if (!res.ok) return { ok: false as const, status: res.status, text: "" };
+      return { ok: true as const, status: res.status, text: await res.text() };
+    } catch {
+      return { ok: false as const, status: 0, text: "" };
+    }
   });
 
 /** Google PageSpeed Insights (mobile strategy). */
@@ -32,10 +40,18 @@ export const fetchPageSpeed = createServerFn({ method: "POST" })
     const key = process.env["PAGESPEED_API_KEY"];
     if (key) params.set("key", key);
 
-    const res = await fetch(
-      `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params.toString()}`,
-    );
-    if (!res.ok) throw new Error(`PageSpeed responded ${res.status}`);
-    const json = (await res.json()) as { lighthouseResult?: unknown };
-    return { lighthouseResult: json.lighthouseResult ?? null };
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params.toString()}`,
+      );
+      if (!res.ok) return { ok: false as const, status: res.status, lighthouseResult: null };
+      const json = (await res.json()) as { lighthouseResult?: unknown };
+      return {
+        ok: true as const,
+        status: res.status,
+        lighthouseResult: json.lighthouseResult ?? null,
+      };
+    } catch {
+      return { ok: false as const, status: 0, lighthouseResult: null };
+    }
   });

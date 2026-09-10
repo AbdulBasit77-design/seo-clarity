@@ -87,19 +87,18 @@ function scoreFromIssues(issues: Issue[]): number {
 
 /** Fetch text via the server function, falling back to a public CORS proxy. */
 async function fetchText(url: string, timeoutMs = 20000): Promise<string> {
+  const server = await fetchRemoteText({ data: { url } }).catch(() => null);
+  if (server?.ok) return server.text;
+
+  // Fallback: public CORS proxy (some hosts block datacenter IPs).
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const { text } = await fetchRemoteText({ data: { url } });
-    return text;
-  } catch {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(proxy(url), { signal: controller.signal });
-      if (!res.ok) throw new Error(`Proxy responded ${res.status}`);
-      return await res.text();
-    } finally {
-      clearTimeout(timer);
-    }
+    const res = await fetch(proxy(url), { signal: controller.signal });
+    if (!res.ok) throw new Error(`Could not fetch ${url}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -110,15 +109,23 @@ async function fetchText(url: string, timeoutMs = 20000): Promise<string> {
 async function runPerformanceAudit(
   url: string,
 ): Promise<{ score: number; issues: Issue[] }> {
-  const { lighthouseResult } = await fetchPageSpeed({ data: { url } });
+  const result = await fetchPageSpeed({ data: { url } }).catch(() => null);
+  if (!result?.ok || !result.lighthouseResult) {
+    throw new Error(
+      result?.status === 429
+        ? "Google's PageSpeed service is rate-limiting requests right now."
+        : "Google's PageSpeed service didn't return data for this URL.",
+    );
+  }
 
-  const lh = lighthouseResult as
-    | { audits?: Record<string, any>; categories?: { performance?: { score?: number } } }
-    | null;
-  if (!lh) throw new Error("No PageSpeed data");
+  const lh = result.lighthouseResult as {
+    audits?: Record<string, any>;
+    categories?: { performance?: { score?: number } };
+  };
   const audits = lh.audits ?? {};
   const rawScore = lh.categories?.performance?.score;
   const score = typeof rawScore === "number" ? Math.round(rawScore * 100) : 0;
+
 
 
   const issues: Issue[] = [];
@@ -439,7 +446,11 @@ export async function runAudit(rawUrl: string): Promise<AuditResult> {
     categories.performance = perf.value.score;
     issues.push(...perf.value.issues);
   } else {
-    warnings.push("Performance data was unavailable — Google's PageSpeed service didn't respond.");
+    warnings.push(
+      `Performance data was unavailable — ${
+        perf.reason instanceof Error ? perf.reason.message : "PageSpeed didn't respond."
+      }`,
+    );
   }
 
   if (html.status === "fulfilled") {
