@@ -446,7 +446,11 @@ export async function runAudit(rawUrl: string): Promise<AuditResult> {
     categories.performance = perf.value.score;
     issues.push(...perf.value.issues);
   } else {
-    warnings.push("Performance data was unavailable — Google's PageSpeed service didn't respond.");
+    warnings.push(
+      `Performance data was unavailable — ${
+        perf.reason instanceof Error ? perf.reason.message : "PageSpeed didn't respond."
+      }`,
+    );
   }
 
   if (html.status === "fulfilled") {
